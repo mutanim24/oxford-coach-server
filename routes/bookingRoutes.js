@@ -19,4 +19,7 @@ router.get('/my-bookings', authMiddleware, bookingController.getUserBookings);
 // Get all bookings (admin only)
 router.get('/all', authMiddleware, adminMiddleware, bookingController.getAllBookings);
 
+// Get all bookings from BookingV2 collection (admin only)
+router.get('/bookingv2', authMiddleware, adminMiddleware, bookingController.getAllBookingsV2);
+
 module.exports = router;

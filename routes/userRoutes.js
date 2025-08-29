@@ -24,6 +24,32 @@ router.get('/', authMiddleware, adminMiddleware, async (req, res) => {
   }
 });
 
+// @route   PUT api/users/:id/make-admin
+// @desc    Make a user an admin
+// @access  Private (Admin only)
+router.put('/:id/make-admin', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+    
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    // Don't update if user is already an admin
+    if (user.role === 'admin') {
+      return res.status(400).json({ error: 'User is already an admin' });
+    }
+    
+    user.role = 'admin';
+    await user.save();
+    
+    res.json({ message: 'User role updated to admin successfully' });
+  } catch (error) {
+    console.error('Error updating user role:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // @route   DELETE api/users/:id
 // @desc    Delete a user
 // @access  Private (Admin only)

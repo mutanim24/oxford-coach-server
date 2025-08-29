@@ -125,9 +125,11 @@ const confirmBooking = async (req, res) => {
       return res.status(400).json({ message: 'This booking has already been confirmed' });
     }
 
-    // Update booking status to confirmed and save payment ID
+    // Update booking status to confirmed and save payment information
     booking.status = 'confirmed';
     booking.paymentId = paymentIntentId;
+    booking.paymentStatus = 'succeeded';
+    booking.paymentDate = new Date();
     await booking.save();
 
     res.status(200).json({
@@ -204,10 +206,30 @@ const getAllBookings = async (req, res) => {
   }
 };
 
+// Get all bookings from BookingV2 collection (admin only)
+const getAllBookingsV2 = async (req, res) => {
+  try {
+    const bookings = await Booking.find() // This will use the BookingV2 model
+      .populate('user', 'name email')
+      .populate('schedule', 'source destination departureTime fare')
+      .populate('bus', 'operator busType')
+      .sort({ createdAt: -1 });
+
+    res.status(200).json({
+      success: true,
+      bookings
+    });
+  } catch (error) {
+    console.error('Error fetching all bookings from BookingV2:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
 module.exports = {
   createBooking,
   confirmBooking,
   getBookingById,
   getUserBookings,
-  getAllBookings
+  getAllBookings,
+  getAllBookingsV2
 };

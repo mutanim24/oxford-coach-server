@@ -38,11 +38,29 @@ router.post('/register', [
 
     await user.save();
 
-    // Return user data without password
+    // Generate JWT token
+    const payload = {
+      user: {
+        id: user.id,
+        role: user.role
+      }
+    };
+
+    const token = jwt.sign(
+      payload,
+      process.env.JWT_SECRET,
+      { expiresIn: process.env.JWT_EXPIRE || '1h' }
+    );
+
+    // Return user data with token
     res.status(201).json({
-      _id: user._id,
-      name: user.name,
-      email: user.email
+      token,
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role
+      }
     });
 
   } catch (error) {

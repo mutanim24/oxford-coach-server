@@ -11,6 +11,12 @@ const createPaymentIntent = async (req, res) => {
       return res.status(400).json({ message: 'Booking ID is required' });
     }
 
+    // Check if Stripe secret key is set
+    if (!process.env.STRIPE_SECRET_KEY || process.env.STRIPE_SECRET_KEY === 'sk_test_your_stripe_secret_key_here') {
+      console.error('Stripe secret key is not properly configured');
+      return res.status(500).json({ message: 'Payment system is not properly configured. Please contact support.' });
+    }
+
     // Fetch booking details
     const booking = await Booking.findById(bookingId)
       .populate('user', 'name email')
@@ -53,7 +59,19 @@ const createPaymentIntent = async (req, res) => {
     });
   } catch (error) {
     console.error('Error creating payment intent:', error);
-    res.status(500).json({ message: 'Server error', error: error.message });
+    
+    // Provide more specific error messages based on the error type
+    if (error.type === 'StripeCardError') {
+      return res.status(400).json({ message: 'Your card was declined. Please try a different payment method.' });
+    } else if (error.type === 'StripeInvalidRequestError') {
+      return res.status(400).json({ message: 'Invalid payment request. Please check your details and try again.' });
+    } else if (error.type === 'StripeAPIError') {
+      return res.status(500).json({ message: 'Payment service is temporarily unavailable. Please try again later.' });
+    } else if (error.type === 'StripeConnectionError') {
+      return res.status(500).json({ message: 'Unable to connect to payment service. Please check your internet connection and try again.' });
+    } else {
+      return res.status(500).json({ message: 'An error occurred while processing your payment. Please try again.' });
+    }
   }
 };
 
