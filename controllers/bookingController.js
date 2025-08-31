@@ -17,20 +17,41 @@ const createBooking = async (req, res) => {
       return res.status(400).json({ message: 'Schedule ID and selected seats (non-empty array) are required' });
     }
 
-    // =================================================================
-    // THE FIX:
-    // Add a check to see if any of the requested seats are already booked for this schedule.
-    // This is the most important piece of logic to prevent double-booking.
-    const existingBooking = await Booking.findOne({
+    // Check if any of the requested seats are already booked for this schedule
+    // Find all bookings for this schedule that have at least one overlapping seat
+    const existingBookings = await Booking.find({
       schedule: scheduleId,
-      selectedSeats: { $in: selectedSeats } // $in operator checks if any of the array elements match
+      status: { $in: ['confirmed', 'pending'] } // Check both confirmed and pending bookings
     });
-
-    if (existingBooking) {
-      // 409 Conflict is the appropriate HTTP status code for this situation.
-      return res.status(409).json({ message: 'One or more of the selected seats are already booked. Please go back and select different seats.' });
+    
+    // Extract all booked seats from existing bookings
+    const bookedSeats = new Set();
+    existingBookings.forEach(booking => {
+      booking.selectedSeats.forEach(seat => bookedSeats.add(seat));
+    });
+    
+    // Check if any of the selected seats are already booked
+    const conflictingSeats = selectedSeats.filter(seat => bookedSeats.has(seat));
+    
+    if (conflictingSeats.length > 0) {
+      // Get more details about the conflicting bookings for better error messages
+      const conflictingBookings = existingBookings.filter(booking => 
+        booking.selectedSeats.some(seat => conflictingSeats.includes(seat))
+      );
+      
+      let errorMessage = `The following seats are already booked: ${conflictingSeats.join(', ')}. Please select different seats.`;
+      
+      if (conflictingBookings.length > 0) {
+        const bookingDetails = conflictingBookings.map(booking => {
+          const status = booking.status === 'confirmed' ? 'confirmed' : 'pending payment';
+          return `Booking ${booking.pnrNumber} (${status})`;
+        }).join(', ');
+        
+        errorMessage += ` These seats are part of ${bookingDetails}.`;
+      }
+      
+      return res.status(409).json({ message: errorMessage });
     }
-    // =================================================================
 
     // Verify database lookups
     const schedule = await Schedule.findById(scheduleId);
@@ -102,27 +123,40 @@ const confirmBooking = async (req, res) => {
     
     // Validate input
     if (!bookingId || !paymentIntentId) {
-      return res.status(400).json({ message: 'Booking ID and Payment Intent ID are required' });
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Booking ID and Payment Intent ID are required' 
+      });
     }
 
     // Find the booking
     const booking = await Booking.findById(bookingId)
       .populate('user', 'name email')
       .populate('schedule', 'source destination departureTime fare')
-      .populate('bus', 'operator busType'); // Corrected populate
+      .populate('bus', 'operator busType');
 
     if (!booking) {
-      return res.status(404).json({ message: 'Booking not found' });
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Booking not found' 
+      });
     }
 
     // Check if booking belongs to the authenticated user
     if (booking.user._id.toString() !== req.user.id) {
-      return res.status(403).json({ message: 'Not authorized to access this booking' });
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Not authorized to access this booking' 
+      });
     }
 
     // Check if booking is already confirmed
     if (booking.status === 'confirmed') {
-      return res.status(400).json({ message: 'This booking has already been confirmed' });
+      return res.status(200).json({ 
+        success: true, 
+        booking,
+        message: 'This booking has already been confirmed' 
+      });
     }
 
     // Update booking status to confirmed and save payment information
@@ -132,13 +166,23 @@ const confirmBooking = async (req, res) => {
     booking.paymentDate = new Date();
     await booking.save();
 
+    // Return the updated booking with populated fields
+    const updatedBooking = await Booking.findById(bookingId)
+      .populate('user', 'name email')
+      .populate('schedule', 'source destination departureTime fare')
+      .populate('bus', 'operator busType');
+
     res.status(200).json({
       success: true,
-      booking
+      booking: updatedBooking
     });
   } catch (error) {
     console.error('Error confirming booking:', error);
-    res.status(500).json({ message: 'Server error', error: error.message });
+    res.status(500).json({ 
+      success: false, 
+      message: 'Server error occurred while confirming booking',
+      error: error.message 
+    });
   }
 };
 

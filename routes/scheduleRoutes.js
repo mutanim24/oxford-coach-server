@@ -165,15 +165,15 @@ router.get('/:id', async (req, res) => {
       return res.status(404).json({ message: 'Schedule not found' });
     }
     
-    // Find all confirmed bookings for this schedule
+// Find all bookings for this schedule (both confirmed and pending)
     const Booking = require('../models/Booking');
     const bookings = await Booking.find({ 
-      schedule: scheduleId, 
-      status: 'confirmed' 
+      schedule: scheduleId,
+      status: { $in: ['confirmed', 'pending'] }
     });
     
     // Extract seat numbers from bookings
-    const bookedSeats = bookings.map(booking => booking.seatNumber);
+    const bookedSeats = bookings.flatMap(booking => booking.selectedSeats);
     
     // Return schedule details with bus info and booked seats
     res.json({
