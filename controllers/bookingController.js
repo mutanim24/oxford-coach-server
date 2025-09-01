@@ -131,9 +131,18 @@ const confirmBooking = async (req, res) => {
 
     // Find the booking
     const booking = await Booking.findById(bookingId)
-      .populate('user', 'name email')
-      .populate('schedule', 'source destination departureTime fare')
-      .populate('bus', 'operator busType');
+      .populate({
+        path: 'user',
+        select: 'name email'
+      })
+      .populate({
+        path: 'schedule',
+        select: 'source destination departureTime fare'
+      })
+      .populate({
+        path: 'bus',
+        select: 'operator busType'
+      });
 
     if (!booking) {
       return res.status(404).json({ 
@@ -168,9 +177,18 @@ const confirmBooking = async (req, res) => {
 
     // Return the updated booking with populated fields
     const updatedBooking = await Booking.findById(bookingId)
-      .populate('user', 'name email')
-      .populate('schedule', 'source destination departureTime fare')
-      .populate('bus', 'operator busType');
+      .populate({
+        path: 'user',
+        select: 'name email'
+      })
+      .populate({
+        path: 'schedule',
+        select: 'source destination departureTime fare'
+      })
+      .populate({
+        path: 'bus',
+        select: 'operator busType'
+      });
 
     res.status(200).json({
       success: true,
@@ -190,17 +208,32 @@ const confirmBooking = async (req, res) => {
 const getBookingById = async (req, res) => {
   try {
     const booking = await Booking.findById(req.params.id)
-      .populate('user', 'name email')
-      .populate('schedule', 'source destination departureTime fare')
-      .populate('bus', 'operator busType'); // Corrected populate
+      .populate({
+        path: 'user',
+        select: 'name email'
+      })
+      .populate({
+        path: 'schedule',
+        select: 'source destination departureTime fare'
+      })
+      .populate({
+        path: 'bus',
+        select: 'operator busType'
+      });
 
     if (!booking) {
-      return res.status(404).json({ message: 'Booking not found' });
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Booking not found' 
+      });
     }
 
     // Check if booking belongs to the authenticated user
     if (booking.user._id.toString() !== req.user.id) {
-      return res.status(403).json({ message: 'Not authorized to access this booking' });
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Not authorized to access this booking' 
+      });
     }
 
     res.status(200).json({
@@ -209,17 +242,44 @@ const getBookingById = async (req, res) => {
     });
   } catch (error) {
     console.error('Error fetching booking:', error);
-    res.status(500).json({ message: 'Server error', error: error.message });
+    res.status(500).json({ 
+      success: false, 
+      message: 'Server error occurred while fetching booking',
+      error: error.message 
+    });
   }
 };
 
 // Get all bookings for the authenticated user
 const getUserBookings = async (req, res) => {
   try {
+    console.log('Fetching bookings for user ID:', req.user.id);
+    
+    // The Booking model stores user as ObjectId, so we filter by user ID
     const bookings = await Booking.find({ user: req.user.id })
-      .populate('schedule', 'source destination departureTime fare') // Removed arrivalTime as it's not standard in schedules
-      .populate('bus', 'operator busType') // Corrected populate
+      .populate({
+        path: 'user',
+        select: 'name email'
+      })
+      .populate({
+        path: 'schedule',
+        select: 'source destination departureTime fare'
+      })
+      .populate({
+        path: 'bus',
+        select: 'operator busType name'
+      })
       .sort({ createdAt: -1 });
+
+    console.log('Found bookings:', bookings.length);
+
+    // If populate fails, we'll still return the bookings without the populated data
+    if (!bookings || bookings.length === 0) {
+      return res.status(200).json({
+        success: true,
+        bookings: []
+      });
+    }
 
     res.status(200).json({
       success: true,
@@ -227,7 +287,11 @@ const getUserBookings = async (req, res) => {
     });
   } catch (error) {
     console.error('Error fetching user bookings:', error);
-    res.status(500).json({ message: 'Server error', error: error.message });
+    res.status(500).json({ 
+      success: false, 
+      message: 'Server error occurred while fetching bookings',
+      error: error.message 
+    });
   }
 };
 
@@ -269,11 +333,90 @@ const getAllBookingsV2 = async (req, res) => {
   }
 };
 
+// Cancel a booking
+const cancelBooking = async (req, res) => {
+  try {
+    const booking = await Booking.findById(req.params.id)
+      .populate({
+        path: 'schedule',
+        select: 'source destination departureTime fare'
+      })
+      .populate({
+        path: 'bus',
+        select: 'operator busType'
+      });
+
+    if (!booking) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Booking not found' 
+      });
+    }
+
+    // Check if booking belongs to the authenticated user
+    if (booking.user.toString() !== req.user.id) {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Not authorized to cancel this booking' 
+      });
+    }
+
+    // Check if booking can be cancelled
+    if (booking.status === 'cancelled') {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'This booking has already been cancelled' 
+      });
+    }
+
+    // Check if departure time has passed
+    if (new Date(booking.schedule.departureTime) < new Date()) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Cannot cancel a booking for a past departure' 
+      });
+    }
+
+    // Update booking status to cancelled
+    booking.status = 'cancelled';
+    await booking.save();
+
+    // Return the updated booking with populated fields
+    const updatedBooking = await Booking.findById(req.params.id)
+      .populate({
+        path: 'user',
+        select: 'name email'
+      })
+      .populate({
+        path: 'schedule',
+        select: 'source destination departureTime fare'
+      })
+      .populate({
+        path: 'bus',
+        select: 'operator busType'
+      });
+
+    res.status(200).json({
+      success: true,
+      message: 'Booking cancelled successfully',
+      booking: updatedBooking
+    });
+  } catch (error) {
+    console.error('Error cancelling booking:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Server error occurred while cancelling booking',
+      error: error.message 
+    });
+  }
+};
+
 module.exports = {
   createBooking,
   confirmBooking,
   getBookingById,
   getUserBookings,
   getAllBookings,
-  getAllBookingsV2
+  getAllBookingsV2,
+  cancelBooking
 };
